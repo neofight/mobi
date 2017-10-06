@@ -2,10 +2,12 @@ package mobi
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"github.com/neofight/mobi/convert"
 	"github.com/neofight/mobi/headers"
 	"os"
+	"unicode/utf8"
 )
 
 type Book struct {
@@ -94,4 +96,47 @@ func (mobiFile Book) Cover() ([]byte, error) {
 	}
 
 	return nil, nil
+}
+
+func (mobiFile Book) Markup() (string, error) {
+
+	startIndex := mobiFile.mobiHeader.FirstContentIndex
+	endIndex := mobiFile.mobiHeader.FirstNonBookIndex - 1
+
+	text := make([]byte, 0)
+
+	for index := startIndex; index <= endIndex; index++ {
+
+		record := mobiFile.pdbHeader.Records[index]
+		nextRecord := mobiFile.pdbHeader.Records[index+1]
+
+		recordOffset := record.RecordDataOffset
+		recordSize := nextRecord.RecordDataOffset - recordOffset
+
+		_, err := mobiFile.file.Seek(int64(recordOffset), 0)
+
+		if err != nil {
+			return "", fmt.Errorf("unable to find text: %v", err)
+		}
+
+		recordData := make([]byte, recordSize)
+
+		err = binary.Read(mobiFile.file, binary.BigEndian, &recordData)
+
+		if err != nil {
+			return "", fmt.Errorf("unable to read text: %v", err)
+		}
+
+		recordText := convert.FromLZ77(recordData)
+
+		text = append(text, recordText...)
+	}
+
+	text = text[:mobiFile.palmDOCHeader.TextLength]
+
+	if !utf8.Valid(text) {
+		return "", errors.New("unable to decompress text")
+	}
+
+	return string(text), nil
 }

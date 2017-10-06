@@ -9,7 +9,9 @@ import (
 
 type MOBI struct {
 	EXTHHeaderPresent bool
+	FirstContentIndex int
 	FirstImageIndex   int
+	FirstNonBookIndex int
 }
 
 func ReadMOBI(reader io.Reader) (*MOBI, error) {
@@ -34,6 +36,8 @@ func ReadMOBI(reader io.Reader) (*MOBI, error) {
 
 	return &MOBI{
 		EXTHHeaderPresent: (convert.FromUint32(header[112:116]) & 0x40) != 0,
+		FirstContentIndex: convert.FromUint16(header[176:178]),
 		FirstImageIndex:   convert.FromUint32(header[92:96]),
+		FirstNonBookIndex: convert.FromUint32(header[64:68]),
 	}, nil
 }

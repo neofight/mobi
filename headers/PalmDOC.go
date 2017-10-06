@@ -3,10 +3,12 @@ package headers
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/neofight/mobi/convert"
 	"io"
 )
 
 type PalmDOC struct {
+	TextLength int
 }
 
 func ReadPalmDOC(reader io.Reader) (*PalmDOC, error) {
@@ -19,5 +21,7 @@ func ReadPalmDOC(reader io.Reader) (*PalmDOC, error) {
 		return nil, fmt.Errorf("unable to read PalmDOC header: %v", err)
 	}
 
-	return &PalmDOC{}, nil
+	return &PalmDOC{
+		TextLength: convert.FromUint32(header[4:8]),
+	}, nil
 }
