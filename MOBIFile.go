@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"github.com/neofight/mobi/convert"
 	"github.com/neofight/mobi/headers"
+	"golang.org/x/net/html"
 	"os"
+	"strconv"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -139,4 +142,149 @@ func (mobiFile Book) Markup() (string, error) {
 	}
 
 	return string(text), nil
+}
+
+func (mobiFile Book) Text() (string, error) {
+
+	markup, err := mobiFile.Markup()
+
+	if err != nil {
+		return "", fmt.Errorf("unable to read markup: %v", err)
+	}
+
+	pos, err := getTOCPosition(markup)
+
+	if err != nil {
+		return "", fmt.Errorf("unable to locate TOC: %v", err)
+	}
+
+	bookmarks, err := parseTOC(markup[pos:])
+
+	text := make([]string, 0)
+
+	for i := range bookmarks {
+
+		start := bookmarks[i]
+		var end int
+
+		if i < len(bookmarks)-1 {
+			end = bookmarks[i+1]
+		} else {
+			end = pos
+		}
+
+		paragraphs, err := parseChapter(markup[start:end])
+
+		if err != nil {
+			return "", fmt.Errorf("unable to parse chapter: %v", err)
+		}
+
+		text = append(text, paragraphs...)
+	}
+
+	return strings.Join(text, "\n\n"), nil
+}
+
+func getTOCPosition(markup string) (int, error) {
+
+	htmlReader := strings.NewReader(markup)
+
+	tokenizer := html.NewTokenizer(htmlReader)
+
+	for {
+		tokenType := tokenizer.Next()
+
+		switch {
+		case tokenType == html.ErrorToken:
+			return 0, fmt.Errorf("unable to find reference element")
+		case tokenType == html.SelfClosingTagToken:
+			token := tokenizer.Token()
+
+			if token.Data == "reference" {
+				filepos, err := attr(token, "filepos")
+
+				if err != nil {
+					return 0, errors.New("filepos attribute missing")
+				}
+
+				pos, err := strconv.Atoi(filepos)
+
+				if err != nil {
+					return 0, errors.New("filepos attribute invalid")
+				}
+
+				return pos, nil
+			}
+		}
+	}
+}
+
+func parseTOC(markup string) ([]int, error) {
+
+	toc := make([]int, 0)
+
+	htmlReader := strings.NewReader(markup)
+
+	tokenizer := html.NewTokenizer(htmlReader)
+
+	for {
+		tokenType := tokenizer.Next()
+
+		switch {
+		case tokenType == html.ErrorToken:
+			return toc[1:], nil
+		case tokenType == html.StartTagToken:
+			token := tokenizer.Token()
+
+			if token.Data == "a" {
+				filepos, err := attr(token, "filepos")
+
+				if err != nil {
+					continue
+				}
+
+				pos, err := strconv.Atoi(filepos)
+
+				if err != nil {
+					return nil, errors.New("filepos attribute invalid")
+				}
+
+				toc = append(toc, pos)
+			}
+		}
+	}
+}
+
+func parseChapter(markup string) ([]string, error) {
+
+	paragraphs := make([]string, 0)
+
+	htmlReader := strings.NewReader(markup)
+
+	tokenizer := html.NewTokenizer(htmlReader)
+
+	for {
+		tokenType := tokenizer.Next()
+
+		switch {
+		case tokenType == html.ErrorToken:
+			return paragraphs, nil
+		case tokenType == html.TextToken:
+			token := tokenizer.Token()
+
+			if len(strings.TrimSpace(token.Data)) > 0 {
+				paragraphs = append(paragraphs, strings.TrimSpace(token.Data))
+			}
+		}
+	}
+}
+
+func attr(t html.Token, name string) (string, error) {
+	for _, a := range t.Attr {
+		if a.Key == name {
+			return a.Val, nil
+		}
+	}
+
+	return "", fmt.Errorf("attribute %v not found", name)
 }
